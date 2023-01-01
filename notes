@@ -1,0 +1,103 @@
+serial programming:
+
+- both microcontrollers are directly connected to the TX and RX lines of the
+  USB serial chip.
+- a start byte followed by a chip ID indicates which MCU should receive/respond
+- maximum program size: 255
+
+protocol:
+1. send start code (0x7F)
+2. send chip ID (0x31 or 0x32)
+3. send program
+4. send checksum (over program)
+5. send end code (0x7E)
+6. expect confirmation from chip:
+   a. start code (0x7F)
+   b. chip ID
+   c. result (0x01 = success, 0x00 = failure)
+
+instruction encoding:
+
+    xcccccmp [arg1] [arg2]
+    ^\___/^^
+    |  |  |'-plus?
+    |  |  '-minus?
+    |  '-operation
+    '-unused (0)
+
+operations:
+ 1 = nop
+ 2 = mov R/I R
+ 3 = jmp L
+ 4 = slp R/I
+ 5 = slx P
+ 6 = teq R/I R/I
+ 7 = tgt R/I R/I
+ 8 = tlt R/I R/I
+ 9 = tcp R/I R/I
+10 = add R/I
+11 = sub R/I
+12 = mul R/I
+13 = not
+14 = dgt R/I
+15 = dst R/I R/I
+16 = lbl L
+31 = reserved (so 0x7F and 0x7E remain available as start/end codes)
+
+argument encoding R/I:
+
+    x110xxxx xxxxxxxx = dat
+    x111xxxx xxxxxxxx = acc
+    x1000xxx xxxxxxxx = x0
+    x1001xxx xxxxxxxx = x1
+    x1010xxx xxxxxxxx = p0
+    x1011xxx xxxxxxxx = p1
+
+    x00hhhhh xxllllll = hhhhhllllll - 1000
+
+argument encoding R:
+
+    x110xxxx = dat
+    x111xxxx = acc
+    x1000xxx = x0
+    x1001xxx = x1
+    x1010xxx = p0
+    x1011xxx = p1
+
+argument encoding L:
+
+    llllllll = label number (assigned in order, starting at 0)
+
+argument encoding P:
+
+    x1xxxxxx = x0
+    x0xxxxxx = x1
+
+
+checksum calculation:
+
+  chk(bytes) = - sum(bytes) / 4 (mod 256)
+
+  calculate mod 256:
+  1. add up the input bytes
+  2. negate
+  3. divide by 4 (shift right by 2 bits)
+  result is a 6-bit number.
+
+
+firmware states:
+ no_prog
+   -> transmission_start, when START_CHAR received
+ empty_prog (initial state)
+   -> transmission_start, when START_CHAR received
+ transmission_start
+   -> transmission_start, when START_CHAR received
+   -> line_prog, if own serial number received
+   -> previous state otherwise
+ line_prog
+   -> transmission_start, when START_CHAR received
+   -> prog_ready, when END_CHAR received and checksum OK
+   -> empty_prog, when END_CHAR received and checksum fails
+   -> empty_prog, when END_CHAR received while program_buf_pos <= 2
+ prog_ready
+   -> transmission_start, when START_CHAR received

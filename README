@@ -1,0 +1,14 @@
+/* assembler and programmer for rickp's MC5000 dev kit
+ * pesco 2022, ISC license
+ *
+ * Reads MC5000 assembly code from stdin or a file. Translates the program and
+ * writes it to the given MCU via serial port.
+ *
+ * See also: https://github.com/rickp/MC5000_DevKit
+ */
+
+run 'make' to build.
+
+run 'mc5000 -h' for usage info.
+
+see 'notes' file for encoding and protocol details.

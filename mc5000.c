@@ -281,6 +281,10 @@ emit_byte(int n)
 	if (outf != NULL)
 		fputc(n, outf);
 	checksum += n;
+
+	// XXX
+	struct timespec ts = {0, 10 * 100000L};		/* 10 ms */
+	nanosleep(&ts, NULL);	// XXX could be interrupted
 }
 
 void

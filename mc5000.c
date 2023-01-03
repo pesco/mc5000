@@ -7,15 +7,16 @@
  * See also: https://github.com/rickp/MC5000_DevKit
  */
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdint.h>	/* uint8_t */
 #include <stdlib.h>	/* exit */
 #include <string.h>	/* strcmp, strdup */
 #include <ctype.h>	/* isdigit */
 #include <unistd.h>	/* getopt */
-#include <termios.h>	/* tcgetattr, tcsetattr, cfsetspeed */
 #include <regex.h>
-#include <assert.h>
+#include <termios.h>	/* tcgetattr, tcsetattr, cfsetspeed */
+#include <time.h>	/* nanosleep */
 #include <err.h>
 
 enum argtype {ARG_NONE, ARG_R, ARG_RI, ARG_L, ARG_P};
@@ -184,10 +185,21 @@ main(int argc, char *argv[])
 	if (devf != NULL) {
 		struct termios t;
 
-		/* set line speed */
+		/* perform unbuffered output */
+		if (setvbuf(devf, NULL, _IONBF, 0) != 0)
+			err(1, "setvbuf");
+
+		/* set up line discipline - cf. termios(4) */
 		if (tcgetattr(fileno(devf), &t) != 0)
 			err(1, "tcgetattr");
-		cfsetspeed(&t, B19200);
+		cfsetspeed(&t, B19200);		/* 19200 Baud */
+		t.c_iflag = 0;			/* raw input */
+		t.c_oflag = 0;			/* raw output */
+		t.c_cflag = CREAD|CS8;		/* 8N1, no flow control */
+		t.c_cflag |= CLOCAL;		/* ignore "modem" status */
+		t.c_lflag = 0;			/* no echo, line canon. etc. */
+		t.c_cc[VMIN] = 0;		/* stop read() if... */
+		t.c_cc[VTIME] = 10;		/* ...no input after 1 s */
 		if (tcsetattr(fileno(devf), TCSAFLUSH, &t) != 0)
 			err(1, "tcsetattr");
 
@@ -236,7 +248,6 @@ main(int argc, char *argv[])
 		checksum = -checksum >> 2;
 		emit_byte(checksum);
 		emit_byte(0x7E);		/* end code */
-		fflush(devf);
 
 		/* read and validate response */
 		if (fread(resp, 1, 3, devf) < 3)

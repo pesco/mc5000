@@ -243,17 +243,23 @@ main(int argc, char *argv[])
 
 	/* finish programming */
 	if (devf != NULL) {
-		uint8_t resp[3];
+		uint8_t resp[3] = {};
 
 		checksum = -checksum >> 2;
 		emit_byte(checksum);
 		emit_byte(0x7E);		/* end code */
 
 		/* read and validate response */
-		if (fread(resp, 1, 3, devf) < 3)
-			errx(1, "error reading response from board");
+		if ((r = fread(resp, 1, sizeof resp, devf)) < sizeof resp) {
+			for (int i = 0; i < sizeof resp; i++)	// XXX
+				fprintf(stderr, " %.2X", resp[i]);
+			fprintf(stderr, "\n");
+			errx(1, "short read (%d bytes) from board: %s%s", r,
+				ferror(devf) ? "read error" : "",
+				feof(devf) ? "end of file" : "");
+		}
 		if (resp[0] != 0x7F)
-			errx(1, "unexpected response received");
+			errx(1, "unexpected response (0x%.2x)", resp[0]);
 		if (resp[1] != 0x30 + mcu)
 			errx(1, "wrong chip ID (0x%.2x) in response", resp[1]);
 		if (resp[2] == 1)

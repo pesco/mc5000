@@ -85,19 +85,152 @@ checksum calculation:
   result is a 6-bit number.
 
 
-firmware states:
- no_prog
-   -> transmission_start, when START_CHAR received
- empty_prog (initial state)
-   -> transmission_start, when START_CHAR received
- transmission_start
-   -> transmission_start, when START_CHAR received
-   -> line_prog, if own serial number received
-   -> previous state otherwise
- line_prog
-   -> transmission_start, when START_CHAR received
-   -> prog_ready, when END_CHAR received and checksum OK
-   -> empty_prog, when END_CHAR received and checksum fails
-   -> empty_prog, when END_CHAR received while program_buf_pos <= 2
- prog_ready
-   -> transmission_start, when START_CHAR received
+FIRMWARE STATE MACHINE:
+
+internally defined state names:
+
+ - no_prog
+ - empty_prog
+ - transmission_start
+ - line_prog
+ - prog_ready
+
+the actual state is a pair (state, prev_state), for a total of 25 combinations.
+however, most combinations are unreachable.
+transitions:
+
+ (empty_prog, no_prog) REACHABLE INITIAL
+   - START_CHAR -> (transmission_start, empty_prog)
+   - own chip ID -> (empty_prog, no_prog) & report (not programmed)
+   - other input -> (empty_prog, no_prog)
+
+ (transmission_start, empty_prog) REACHABLE
+   - START_CHAR -> (transmission_start, empty_prog)
+   - own chip ID -> (line_prog, no_prog)
+   - other chip ID -> (empty_prog, no_prog)
+     XXX following program bytes could be interpreted in (empty_prog, no_prog)
+
+ (line_prog, no_prog) REACHABLE
+   - START_CHAR -> (transmission_start, line_prog)
+   - END_CHAR, nothing received -> (empty_prog, no_prog) & reset/success
+   - END_CHAR, 1 byte received  -> (empty_prog, no_prog) & reset/success
+   - END_CHAR, 2 bytes received -> (empty_prog, no_prog) & reset/success
+   - END_CHAR, checksum OK  -> (prog_ready, no_prog) & enable/success
+   - END_CHAR, checksum bad -> (empty_prog, no_prog) & reset/failure
+   - other input -> (line_prog, no_prog) & store input in buffer
+
+ (prog_ready, no_prog) REACHABLE
+   - START_CHAR -> (transmission_start, prog_ready)
+   - own chip ID -> (prog_ready, no_prog) & report
+   - other input -> (prog_ready, no_prog)
+   - program error -> (empty_prog, no_prog)
+
+ (transmission_start, prog_ready) REACHABLE
+   - START_CHAR -> (transmission_start, prog_ready)
+   - own chip ID -> (line_prog, no_prog)
+   - other chip ID -> (prog_ready, no_prog)
+     XXX following program bytes could be interpreted in (prog_ready, no_prog)
+
+ (transmission_start, line_prog) REACHABLE NONSTD
+   - START_CHAR -> (transmission_start, line_prog)
+   - own chip ID -> (line_prog, no_prog)
+   - other chip ID -> (line_prog, no_prog)
+     XXX this transition lets us write the same program to many chips at once!
+	 START_CHAR, ID1, START_CHAR, ID2, START_CHAR, XX, (program)...
+
+ (empty_prog, empty_prog)
+   - START_CHAR -> (transmission_start, empty_prog)
+   - own chip ID -> (empty_prog, empty_prog) & report (not programmed)
+   - other input -> (empty_prog, empty_prog)
+
+ (empty_prog, transmission_start)
+   - START_CHAR -> (transmission_start, transmission_start)
+   - own chip ID -> (empty_prog, transmission_start) & report (not programmed)
+   - other input -> (empty_prog, transmission_start)
+
+ (empty_prog, line_prog)
+   - START_CHAR -> (transmission_start, line_prog)
+   - own chip ID -> (empty_prog, line_prog) & report (not programmed)
+   - other input -> (empty_prog, line_prog)
+
+ (empty_prog, prog_ready)
+   - START_CHAR -> (transmission_start, prog_ready)
+   - own chip ID -> (empty_prog, prog_ready) & report (not programmed)
+   - other input -> (empty_prog, prog_ready)
+
+ (transmission_start, no_prog)
+   - START_CHAR -> (transmission_start, transmission_start)
+   - own chip ID -> (line_prog, no_prog)
+   - other chip ID -> (no_prog, no_prog)
+
+ (transmission_start, transmission_start)
+   - START_CHAR -> (transmission_start, transmission_start)
+   - own chip ID -> (line_prog, no_prog)
+   - other chip ID -> (transmission_start, no_prog)
+
+ (line_prog, empty_prog)
+   - START_CHAR -> (transmission_start, empty_prog)
+   - END_CHAR, short input  -> (empty_prog, empty_prog) & reset/success
+   - END_CHAR, checksum OK  -> (prog_ready, empty_prog) & enable/success
+   - END_CHAR, checksum bad -> (empty_prog, empty_prog) & reset/failure
+   - other input -> (line_prog, empty_prog) & buffer input
+
+ (line_prog, transmission_start)
+   - START_CHAR -> (transmission_start, transmission_start)
+   - END_CHAR, short input  -> (empty_prog, transmission_start) & reset/success
+   - END_CHAR, checksum OK  -> (prog_ready, transmission_start) & enable/success
+   - END_CHAR, checksum bad -> (empty_prog, transmission_start) & reset/failure
+   - other input -> (line_prog, transmission_start) & buffer input
+
+ (line_prog, line_prog)
+   - START_CHAR -> (transmission_start, line_prog)
+   - END_CHAR, short input  -> (empty_prog, line_prog) & reset/success
+   - END_CHAR, checksum OK  -> (prog_ready, line_prog) & enable/success
+   - END_CHAR, checksum bad -> (empty_prog, line_prog) & reset/failure
+   - other input -> (line_prog, line_prog) & buffer input
+
+ (line_prog, prog_ready)
+   - START_CHAR -> (transmission_start, prog_ready)
+   - END_CHAR, short input  -> (empty_prog, prog_ready) & reset/success
+   - END_CHAR, checksum OK  -> (prog_ready, prog_ready) & enable/success
+   - END_CHAR, checksum bad -> (empty_prog, prog_ready) & reset/failure
+   - other input -> (line_prog, prog_ready) & buffer input
+
+ (prog_ready, empty_prog)
+   - START_CHAR -> (transmission_start, empty_prog)
+   - own chip ID -> (prog_ready, empty_prog) & report
+   - other input -> (prog_ready, empty_prog)
+   - program error -> (empty_prog, empty_prog)
+
+ (prog_ready, transmission_start)
+   - START_CHAR -> (transmission_start, transmission_start)
+   - own chip ID -> (prog_ready, transmission_start) & report
+   - other input -> (prog_ready, transmission_start)
+   - program error -> (empty_prog, transmission_start)
+
+ (prog_ready, line_prog)
+   - START_CHAR -> (transmission_start, line_prog)
+   - own chip ID -> (prog_ready, line_prog) & report
+   - other input -> (prog_ready, line_prog)
+   - program error -> (empty_prog, line_prog)
+
+ (prog_ready, prog_ready)
+   - START_CHAR -> (transmission_start, prog_ready)
+   - own chip ID -> (prog_ready, prog_ready) & report (programmed)
+   - other input -> (prog_ready, prog_ready)
+   - program error -> (empty_prog, prog_ready)
+
+ (no_prog, no_prog)
+   - START_CHAR -> (transmission_start, no_prog)
+
+ (no_prog, empty_prog)
+   - START_CHAR -> (transmission_start, empty_prog)
+
+ (no_prog, transmission_start)
+   - START_CHAR -> (transmission_start, transmission_start)
+
+ (no_prog, line_prog)
+   - START_CHAR -> (transmission_start, line_prog)
+
+ (no_prog, prog_ready)
+   - START_CHAR -> (transmission_start, prog_ready)

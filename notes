@@ -1,7 +1,16 @@
-serial programming:
-
 - both microcontrollers are directly connected to the TX and RX lines of the
   USB serial chip.
+
+requesting MCU status:
+ 1. send chip ID (0x31 or 0x32)
+ 2. receive 6-byte report from chip:
+    a. chip ID
+    b. acc + 1000 = xxxxhhhh xlllllll (11 significant bits)
+    c. dat + 1000 = xxxxhhhh xlllllll (11 significant bits)
+    d. checksum over acc and dat
+
+programming:
+
 - a start byte followed by a chip ID indicates which MCU should receive/respond
 - maximum program size: 255
 
@@ -11,7 +20,7 @@ protocol:
 3. send program
 4. send checksum (over program)
 5. send end code (0x7E)
-6. expect confirmation from chip:
+6. expect 3-byte confirmation from chip:
    a. start code (0x7F)
    b. chip ID
    c. result (0x01 = success, 0x00 = failure)

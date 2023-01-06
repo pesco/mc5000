@@ -100,18 +100,21 @@ FILE *outf = NULL;	/* output file */
 FILE *devf = NULL;	/* serial port */
 FILE *inf = NULL;	/* input file */
 const char *fname;	/* input file name */
+const char *devfname;	/* serial port device file name */
 int mcu = 1;		/* programming target */
+int vflag;		/* verbosity */
 int line;		/* current line number */
 int status;		/* exit code */
-uint8_t checksum;
+uint8_t cksum;
 
 static const char *lbltab[256];
 static const int maxlbl = sizeof lbltab / sizeof *lbltab;
 static int nlabel = 0;
 
+void write_byte(uint8_t, FILE *);
 void emit_op(int, const char *, const char *, const char *);
 void emit_op_lbl(const char *);
-void emit_byte(int); // XXX
+int read_result(int);
 
 #define STR(X) matchstr(buf, rm, MATCH_ ## X)
 #define CHR(X) matchchr(buf, rm, MATCH_ ## X)
@@ -120,7 +123,7 @@ void
 usage(FILE *f, int x)
 {
 	extern const char *__progname;
-	fprintf(f, "usage: %s [-u num] [-l dev | -o file] [file]\n",
+	fprintf(f, "usage: %s [-v] [-u num] [-l dev | -o file] [file]\n",
 	    __progname);
 	exit(x);
 }
@@ -140,13 +143,14 @@ main(int argc, char *argv[])
 	}
 
 	/* handle command line options */
-	while ((r = getopt(argc, argv, "hl:o:u:")) != -1) {
+	while ((r = getopt(argc, argv, "hl:o:u:v")) != -1) {
 		switch (r) {
 		case 'h':
 			usage(stdout, 0);
 		case 'l':
-			if ((devf = fopen(optarg, "r+")) == NULL)
-				err(1, "%s", optarg);
+			devfname = optarg;
+			if ((devf = fopen(devfname, "r+")) == NULL)
+				err(1, "%s", devfname);
 			outf = devf;
 			break;
 		case 'o':
@@ -161,6 +165,9 @@ main(int argc, char *argv[])
 				err(1, "invalid argument '%s'. option -%c "
 				    "expects a single digit MCU number",
 				    optarg, r);
+			break;
+		case 'v':
+			vflag++;
 			break;
 		default:
 			usage(stderr, 1);
@@ -203,8 +210,8 @@ main(int argc, char *argv[])
 		if (tcsetattr(fileno(devf), TCSAFLUSH, &t) != 0)
 			err(1, "tcsetattr");
 
-		emit_byte(0x7F);		/* start code */
-		emit_byte(0x30 + mcu);	/* chip id */
+		write_byte(0x7F, devf);		/* start code */
+		write_byte(0x30 + mcu, devf);	/* chip id */
 	}
 
 	/* process input */
@@ -243,34 +250,33 @@ main(int argc, char *argv[])
 
 	/* finish programming */
 	if (devf != NULL) {
-		uint8_t resp[3] = {};
+		write_byte(cksum >> 2, devf);
+		write_byte(0x7E, devf);		/* end code */
 
-		checksum = -checksum >> 2;
-		emit_byte(checksum);
-		emit_byte(0x7E);		/* end code */
-
-		/* read and validate response */
-		if ((r = fread(resp, 1, sizeof resp, devf)) < sizeof resp) {
-			for (int i = 0; i < sizeof resp; i++)	// XXX
-				fprintf(stderr, " %.2X", resp[i]);
-			fprintf(stderr, "\n");
-			errx(1, "short read (%d bytes) from board: %s%s", r,
-				ferror(devf) ? "read error" : "",
-				feof(devf) ? "end of file" : "");
-		}
-		if (resp[0] != 0x7F)
-			errx(1, "unexpected response (0x%.2x)", resp[0]);
-		if (resp[1] != 0x30 + mcu)
-			errx(1, "wrong chip ID (0x%.2x) in response", resp[1]);
-		if (resp[2] == 1)
+		r = read_result(mcu);
+		if (r == 1)
 			printf("MCU #%d: program accepted\n", mcu);
-		else if (resp[2] == 0)
+		else if (r == 0)
 			errx(1, "MCU #%d: programming failure", mcu);
 		else
-			errx(1, "MCU #%d: unknown result (%d)", mcu, resp[2]);
+			errx(1, "MCU #%d: unknown result (%d)", mcu, r);
 	}
 
 	return status;
+}
+
+void
+write_byte(uint8_t x, FILE *f)
+{
+	if (f == NULL)
+		return;
+
+	fputc(x, f);
+
+	if (f == devf) {
+		struct timespec ts = {0, 10 * 100000L};		/* 10 ms */
+		nanosleep(&ts, NULL);	// XXX could be interrupted
+	}
 }
 
 void
@@ -278,13 +284,8 @@ emit_byte(int n)
 {
 	assert(n >= 0);
 	assert(n < 256);
-	if (outf != NULL)
-		fputc(n, outf);
-	checksum += n;
-
-	// XXX
-	struct timespec ts = {0, 10 * 100000L};		/* 10 ms */
-	nanosleep(&ts, NULL);	// XXX could be interrupted
+	write_byte(n, outf);
+	cksum -= n;
 }
 
 void
@@ -481,4 +482,110 @@ emit_op_lbl(const char *arg)
 
 	emit_byte(OP_LBL << 2);
 	emit_byte(find_label(arg));
+}
+
+uint8_t
+checksum(const uint8_t *buf, size_t n)
+{
+	uint8_t s = 0;
+
+	while (n-- > 0)
+		s -= *buf++;
+
+	return s >> 2;
+}
+
+void
+read_bytes(uint8_t *buf, int o, int n)
+{
+	int i, r;
+
+	r = fread(buf + o, 1, n, devf);
+	if (ferror(devf))
+		errx(1, "%s: read error", devfname);
+	if (r == 0)
+		errx(1, "%s: no response from board", devfname);
+	if (vflag >= 2) {
+		printf("read_bytes:");
+		for (i = 0; i < r; i++)
+			printf(" %.2X", buf[o + i]);
+		printf("\n");
+	}
+	if (r < n)
+		errx(1, "%s: truncated message, %d/%d bytes", devfname,
+		    r + o, r + n);
+}
+
+struct message {
+	enum {RESULT, REPORT} type;
+	int source;				/* MCU number */
+	union {
+		int result;			/* result of programming */
+		struct {
+			int acc, dat;		/* register values */
+			int prog;		/* is MCU programmed? */
+		};
+	};
+};
+
+int
+read_message(struct message *m)
+{
+	uint8_t buf[6];
+	
+	read_bytes(buf, 0, 1);
+	if (buf[0] == 0x7F) {				/* start code */
+		read_bytes(buf, 1, 2);
+		m->type = RESULT;
+		if (buf[1] < 0x30 || buf[1] > 0x39) {
+			fprintf(stderr, "%s: invalid chip ID 0x%.2X in "
+			    "response\n", devfname, buf[1]);
+			return -1;
+		}
+		m->source = buf[1] - 0x30;
+		m->result = buf[2];
+	} else if (buf[0] >= 0x30 && buf[0] <= 0x39) {	/* ASCII digit */
+		read_bytes(buf, 1, 5);
+		m->type = REPORT;
+		m->source = buf[0] - 0x30;
+		if ((buf[5] & 0x3F) != checksum(buf + 1, 4)) {
+			fprintf(stderr, "%s: bad checksum 0x%.2X in report\n",
+			    devfname, buf[5]);
+			return -1;
+		}
+		m->acc = (((buf[1] & 0x0F) << 7) | (buf[2] & 0x7F)) - 1000;
+		m->dat = (((buf[3] & 0x0F) << 7) | (buf[4] & 0x7F)) - 1000;
+		m->prog = buf[5] & 0x40;
+	} else {
+		fprintf(stderr, "%s: unexpected byte 0x%.2X\n", devfname,
+		    buf[0]);
+		return -1;
+	}
+
+	return m->type;
+}
+
+int
+read_result(int mcu)
+{
+	struct message m;
+
+	for (;;) {
+		if (read_message(&m) == -1)	/* junk */
+			continue;
+
+		if (m.type == REPORT)
+			fprintf(stderr, "spurious report from MCU #%d: "
+			    "acc %d, dat %d, %sprogrammed\n",
+			    m.source, m.acc, m.dat, m.prog ? "" : "not ");
+		else if (m.source != mcu)
+			fprintf(stderr, "spurious response from MCU #%d\n",
+			    m.source);
+		else
+			break;			/* success */
+	}
+
+	assert (m.type == RESULT);
+	assert (m.source == mcu);
+	return m.result;
 }

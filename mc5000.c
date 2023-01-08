@@ -516,7 +516,7 @@ read_bytes(uint8_t *buf, int o, int n)
 	}
 	if (r < n)
 		errx(1, "%s: truncated message, %d/%d bytes", devfname,
-		    r + o, r + n);
+		    r + o, n + o);
 }
 
 struct message {

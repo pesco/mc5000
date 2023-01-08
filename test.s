@@ -1,3 +1,6 @@
+# p0 button
+# p1 LED
+
 start:
  teq p0 100
 +mov 100 p1

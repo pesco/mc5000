@@ -576,7 +576,7 @@ read_result(int mcu)
 	struct message m;
 
 	for (;;) {
-		if (read_message(&m) == -1)	/* junk */
+		if (read_message(&m) == -1)	/* received junk */
 			continue;
 
 		if (m.type == REPORT) {
@@ -588,10 +588,10 @@ read_result(int mcu)
 			fprintf(stderr, "unexpected response from MCU #%d\n",
 			    m.source);
 		else
-			break;			/* success */
+			break;			/* got what we wanted */
 	}
 
-	assert (m.type == RESULT);
-	assert (m.source == mcu);
+	assert(m.type == RESULT);
+	assert(m.source == mcu);
 	return m.result;
 }

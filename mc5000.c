@@ -207,7 +207,7 @@ main(int argc, char *argv[])
 		t.c_cflag |= CLOCAL;		/* ignore "modem" status */
 		t.c_lflag = 0;			/* no echo, line canon. etc. */
 		t.c_cc[VMIN] = 0;		/* stop read() if... */
-		t.c_cc[VTIME] = 10;		/* ...no input after 1 s */
+		t.c_cc[VTIME] = 1;		/* ...no input after 100 ms */
 		if (tcsetattr(fileno(devf), TCSAFLUSH, &t) != 0)
 			err(1, "tcsetattr");
 

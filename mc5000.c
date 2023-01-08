@@ -579,12 +579,13 @@ read_result(int mcu)
 		if (read_message(&m) == -1)	/* junk */
 			continue;
 
-		if (m.type == REPORT)
-			fprintf(stderr, "spurious report from MCU #%d: "
-			    "acc %d, dat %d, %sprogrammed\n",
-			    m.source, m.acc, m.dat, m.prog ? "" : "not ");
-		else if (m.source != mcu)
-			fprintf(stderr, "spurious response from MCU #%d\n",
+		if (m.type == REPORT) {
+			if (vflag)
+				fprintf(stderr, "spurious report from MCU #%d: "
+				    "acc %d, dat %d, %sprogrammed\n", m.source,
+				    m.acc, m.dat, m.prog ? "" : "not ");
+		} else if (m.source != mcu)
+			fprintf(stderr, "unexpected response from MCU #%d\n",
 			    m.source);
 		else
 			break;			/* success */

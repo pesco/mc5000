@@ -273,6 +273,8 @@ write_byte(uint8_t x, FILE *f)
 		return;
 
 	fputc(x, f);
+	if (vflag >= 2)
+		printf("write_byte: %.2X\n", (int)x);
 
 	if (f == devf) {
 		struct timespec ts = {0, 10 * 1000000L};	/* 10 ms */

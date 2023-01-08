@@ -108,6 +108,8 @@ int line;		/* current line number */
 int status;		/* exit code */
 uint8_t cksum;
 
+#define MAXRETRY 10	/* how many times to try connecting to the board */
+
 static const char *lbltab[256];
 static const int maxlbl = sizeof lbltab / sizeof *lbltab;
 static int nlabel = 0;
@@ -115,6 +117,7 @@ static int nlabel = 0;
 void write_byte(uint8_t, FILE *);
 void emit_op(int, const char *, const char *, const char *);
 void emit_op_lbl(const char *);
+int get_report(int);
 int read_result(int);
 
 #define STR(X) matchstr(buf, rm, MATCH_ ## X)
@@ -211,6 +214,17 @@ main(int argc, char *argv[])
 		if (tcsetattr(fileno(devf), TCSAFLUSH, &t) != 0)
 			err(1, "tcsetattr");
 
+		/* check/wait for reliable connection */
+		if (vflag)
+			printf("Checking connection...\n");
+		for (r = 0; r < MAXRETRY; r++)
+			if (get_report(mcu) != -1)
+				break;
+		if (r == MAXRETRY)
+			errx(1, "%s: no response from board", devfname);
+
+		if (vflag)
+			printf("Programming...\n");
 		write_byte(0x7F, devf);		/* start code */
 		write_byte(0x30 + mcu, devf);	/* chip id */
 	}
@@ -254,7 +268,7 @@ main(int argc, char *argv[])
 		write_byte(cksum >> 2, devf);
 		write_byte(0x7E, devf);		/* end code */
 
-		r = read_result(mcu);
+		while ((r = read_result(mcu)) == -1) ;
 		if (r == 1)
 			printf("MCU #%d: program accepted\n", mcu);
 		else if (r == 0)
@@ -500,7 +514,7 @@ checksum(const uint8_t *buf, size_t n)
 	return s >> 2;
 }
 
-void
+int
 read_bytes(uint8_t *buf, int o, int n)
 {
 	int i, r;
@@ -508,8 +522,9 @@ read_bytes(uint8_t *buf, int o, int n)
 	r = fread(buf + o, 1, n, devf);
 	if (ferror(devf))
 		errx(1, "%s: read error", devfname);
-	if (r == 0)
-		errx(1, "%s: no response from board", devfname);
+	if (r == 0)				/* read timed out */
+		return -1;
+
 	if (vflag >= 2) {
 		printf("read_bytes:");
 		for (i = 0; i < r; i++)
@@ -519,10 +534,12 @@ read_bytes(uint8_t *buf, int o, int n)
 	if (r < n)
 		errx(1, "%s: truncated message, %d/%d bytes", devfname,
 		    r + o, n + o);
+
+	return r;				/* success */
 }
 
 struct message {
-	enum {RESULT, REPORT} type;
+	enum {JUNK, RESULT, REPORT} type;
 	int source;				/* MCU number */
 	union {
 		int result;			/* result of programming */
@@ -538,60 +555,112 @@ read_message(struct message *m)
 {
 	uint8_t buf[6];
 	
-	read_bytes(buf, 0, 1);
+	if (read_bytes(buf, 0, 1) == -1)
+		return -1;				/* no response */
 	if (buf[0] == 0x7F) {				/* start code */
-		read_bytes(buf, 1, 2);
-		m->type = RESULT;
+		if (read_bytes(buf, 1, 2) == -1)
+			return -1;
 		if (buf[1] < 0x30 || buf[1] > 0x39) {
 			fprintf(stderr, "%s: invalid chip ID 0x%.2X in "
 			    "response\n", devfname, buf[1]);
-			return -1;
+			return (m->type = JUNK);
 		}
+		m->type = RESULT;
 		m->source = buf[1] - 0x30;
 		m->result = buf[2];
 	} else if (buf[0] >= 0x30 && buf[0] <= 0x39) {	/* ASCII digit */
-		read_bytes(buf, 1, 5);
-		m->type = REPORT;
-		m->source = buf[0] - 0x30;
+		if (read_bytes(buf, 1, 5) == -1)
+			return -1;
 		if ((buf[5] & 0x3F) != checksum(buf + 1, 4)) {
 			fprintf(stderr, "%s: bad checksum 0x%.2X in report\n",
 			    devfname, buf[5]);
-			return -1;
+			return (m->type = JUNK);
 		}
+		m->type = REPORT;
+		m->source = buf[0] - 0x30;
 		m->acc = (((buf[1] & 0x0F) << 7) | (buf[2] & 0x7F)) - 1000;
 		m->dat = (((buf[3] & 0x0F) << 7) | (buf[4] & 0x7F)) - 1000;
 		m->prog = buf[5] & 0x40;
 	} else {
 		fprintf(stderr, "%s: unexpected byte 0x%.2X\n", devfname,
 		    buf[0]);
-		return -1;
+		m->type = JUNK;
 	}
 
 	return m->type;
 }
 
+/*
+ * Read and return the result of programming the given MCU.
+ * Prints diagnostics and returns -1 if an unexpected message is received.
+ * Timeout is considered a fatal error and exits the program.
+ */
 int
 read_result(int mcu)
 {
 	struct message m;
 
-	for (;;) {
-		if (read_message(&m) == -1)	/* received junk */
-			continue;
+	if (read_message(&m) == -1)
+		errx(1, "%s: no response from board", devfname);
 
-		if (m.type == REPORT) {
-			if (vflag)
-				fprintf(stderr, "spurious report from MCU #%d: "
-				    "acc %d, dat %d, %sprogrammed\n", m.source,
-				    m.acc, m.dat, m.prog ? "" : "not ");
-		} else if (m.source != mcu)
-			fprintf(stderr, "unexpected response from MCU #%d\n",
-			    m.source);
-		else
-			break;			/* got what we wanted */
+	/* ignore unexpected or invalid messages */
+	if (m.type == JUNK)
+		return -1;
+	if (m.type == REPORT) {
+		if (vflag)
+			fprintf(stderr, "spurious report from MCU #%d: "
+			    "acc %d, dat %d, %sprogrammed\n", m.source,
+			    m.acc, m.dat, m.prog ? "" : "not ");
+		return -1;
+	}
+	if (m.source != mcu) {
+		fprintf(stderr, "unexpected response from MCU #%d\n",
+		    m.source);
+		return -1;
 	}
 
 	assert(m.type == RESULT);
 	assert(m.source == mcu);
 	return m.result;
+}
+
+/*
+ * Obtain and print a status report from the given MCU.
+ * Prints diagnostics and returns -1 if an unexpected message is received.
+ * Returns -1 on timeout, 0 on success.
+ */
+int
+get_report(int mcu)
+{
+	struct message m;
+
+	write_byte(0x30 + mcu, devf);
+	if (read_message(&m) == -1)		/* timeout */
+		return -1;
+
+	/* ignore unexpected or invalid messages */
+	if (m.type == JUNK)
+		return -1;
+	if (m.type == RESULT) {
+		fprintf(stderr, "unexpected message from MCU #%d: ", mcu);
+		if (m.result == 0)
+			fprintf(stderr, "programming failure\n");
+		else if (m.result == 1)
+			fprintf(stderr, "program accepted\n");
+		else
+			fprintf(stderr, "unknown result (%d)\n", m.result);
+		return -1;
+	}
+	if (m.source != mcu) {
+		fprintf(stderr, "unexpected report from MCU #%d: "
+		    "acc %d, dat %d, %sprogrammed\n", m.source,
+		    m.acc, m.dat, m.prog ? "" : "not ");
+		return -1;
+	}
+
+	if (vflag)
+		printf("MCU #%d: acc %d, dat %d, %sprogrammed\n", m.source,
+		    m.acc, m.dat, m.prog ? "" : "not ");
+
+	return 0;				/* success */
 }

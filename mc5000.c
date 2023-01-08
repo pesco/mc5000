@@ -8,6 +8,7 @@
  */
 
 #include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdint.h>	/* uint8_t */
 #include <stdlib.h>	/* exit */
@@ -274,8 +275,10 @@ write_byte(uint8_t x, FILE *f)
 	fputc(x, f);
 
 	if (f == devf) {
-		struct timespec ts = {0, 10 * 100000L};		/* 10 ms */
-		nanosleep(&ts, NULL);	// XXX could be interrupted
+		struct timespec ts = {0, 10 * 1000000L};	/* 10 ms */
+		while (nanosleep(&ts, &ts) == -1)
+			if (errno != EINTR)
+				err(1, "nanosleep");
 	}
 }
 

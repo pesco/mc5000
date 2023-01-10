@@ -1,14 +1,33 @@
-/* assembler and programmer for rickp's MC5000 dev kit
- * pesco 2022, ISC license
- *
- * Reads MC5000 assembly code from stdin or a file. Translates the program and
- * writes it to the given MCU via serial port.
- *
- * See also: https://github.com/rickp/MC5000_DevKit
- */
+MC5000                              README                              MC5000
 
-run 'make' to build.
+DESCRIPTION
+     An assembler and programmer for rickp's MC5000 dev kit.
 
-run 'mc5000 -h' for usage info.
+     The MC5000 is a physical realization of the fictional microcontroller
+     family from the game Shenzhen I/O by Zachtronics. It uses the low-cost
+     Padauk PFS173 microcontroller.
 
-see 'notes' file for encoding and protocol details.
+     This program translates MCxxxx assembly to byte code and writes it to
+     any of the MC5000 chips via the board's USB serial port.
+
+USAGE
+     Run 'mc5000 -h' for quick help.
+
+     Refer to the supplied manpage mc5000.1 for details.
+
+BUILDING
+     Run make.
+
+     The program is designed for a Unix environment, specifically OpenBSD.
+     Patches that port it to other platforms are welcome.
+
+SEE ALSO
+     MC5000 dev kit	https://github.com/rickp/MC5000_DevKit
+     Shenzhen I/O	https://www.zachtronics.com/shenzhen-io/
+
+     The file 'notes' contains various encoding and protocol details.
+
+COPYRIGHT
+     Sven M. Hallberg <pesco@khjk.org>
+     Released under the terms of the ISC license.
+

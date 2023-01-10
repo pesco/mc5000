@@ -204,11 +204,9 @@ main(int argc, char *argv[])
 		if (tcgetattr(fileno(devf), &t) != 0)
 			err(1, "tcgetattr");
 		cfsetspeed(&t, B19200);		/* 19200 Baud */
-		t.c_iflag = 0;			/* raw input */
-		t.c_oflag = 0;			/* raw output */
-		t.c_cflag = CREAD|CS8;		/* 8N1, no flow control */
+		cfmakeraw(&t);			/* raw i/o mode */
+		t.c_cflag |= CREAD|CS8;		/* 8N1, no flow control */
 		t.c_cflag |= CLOCAL;		/* ignore "modem" status */
-		t.c_lflag = 0;			/* no echo, line canon. etc. */
 		t.c_cc[VMIN] = 0;		/* stop read() if... */
 		t.c_cc[VTIME] = 1;		/* ...no input after 100 ms */
 		if (tcsetattr(fileno(devf), TCSAFLUSH, &t) != 0)

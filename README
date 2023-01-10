@@ -19,7 +19,7 @@ BUILDING
      Run make.
 
      The program is designed for a Unix environment, specifically OpenBSD.
-     Patches that port it to other platforms are welcome.
+     It has also been tested on Debian GNU/Linux.
 
 SEE ALSO
      MC5000 dev kit	https://github.com/rickp/MC5000_DevKit

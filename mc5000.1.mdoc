@@ -1,0 +1,73 @@
+.Dd January 18, 2023
+.Dt MC5000 1
+.Os
+.Sh NAME
+.Nm mc5000
+.Nd assembler and programmer for rickp's MC5000 Dev Kit
+.Sh SYNOPSIS
+.Nm
+.Op Fl v
+.Op Fl u Ar n
+.Op Fl l Ar dev | Fl o Ar outfile
+.Op Ar infile
+.Sh DESCRIPTION
+The MC5000 is a real-world instantiation of
+the fictional family of microcontrollers
+at the center of
+Zachtronics' programming puzzle game
+.Dq Shenzhen I/O .
+The
+MC5000 Dev Kit
+employs two low-cost Padauk PFS173 chips to interpret MCxxxx code.
+.Pp
+The
+.Nm
+utility reads MCxxxx assembly from
+.Ar infile
+or standard input and
+translates it to MC5000 byte code.
+The result can be
+sent to a target chip
+via the board's serial port
+or written to
+.Ar outfile .
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl l Ar dev
+Program the target chip via the given serial port device.
+This option is mutually exclusive with
+.Fl o .
+.It Fl o Ar outfile
+Write the assembled program byte code to
+.Ar outfile .
+This option is mutually exclusive with
+.Fl l .
+.It Fl u Ar n
+Select MCU
+.Pf # Ar n
+as the target chip.
+The default is MCU #1.
+.It Fl v
+Print extra informational messages during programming.
+If given two times, all serial communication is logged
+to the standard output.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh SEE ALSO
+.Bl -inset
+.It MC5000 Dev Kit
+.Lk https://github.com/rickp/MC5000_DevKit/
+.It Shenzhen I/O
+.Lk https://www.zachtronics.com/shenzhen-io/
+.El
+.Sh AUTHORS
+.An -nosplit
+The MC5000 Dev Kit was created by GitHub user
+.An rickp .
+The
+.Nm
+utility was written by
+.An Sven M.\& Hallberg Aq Mt pesco@khjk.org
+as an alternative to the original programming software.

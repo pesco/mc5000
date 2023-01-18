@@ -1,0 +1,47 @@
+MC5000(1)		    General Commands Manual		     MC5000(1)
+
+NAME
+     mc5000 - assembler and programmer for rickp's MC5000 Dev Kit
+
+SYNOPSIS
+     mc5000 [-v] [-u n] [-l dev | -o outfile] [infile]
+
+DESCRIPTION
+     The MC5000 is a real-world instantiation of the fictional family of
+     microcontrollers at the center of Zachtronics' programming puzzle game
+     "Shenzhen I/O".  The MC5000 Dev Kit employs two low-cost Padauk PFS173
+     chips to interpret MCxxxx code.
+
+     The mc5000 utility reads MCxxxx assembly from infile or standard input
+     and translates it to MC5000 byte code.  The result can be sent to a
+     target chip via the board's serial port or written to outfile.
+
+     The options are as follows:
+
+     -l dev  Program the target chip via the given serial port device.	This
+	     option is mutually exclusive with -o.
+
+     -o outfile
+	     Write the assembled program byte code to outfile.	This option is
+	     mutually exclusive with -l.
+
+     -u n    Select MCU #n as the target chip.	The default is MCU #1.
+
+     -v	     Print extra informational messages during programming.  If given
+	     two times, all serial communication is logged to the standard
+	     output.
+
+EXIT STATUS
+     The mc5000 utility exits 0 on success, and >0 if an error occurs.
+
+SEE ALSO
+     MC5000 Dev Kit https://github.com/rickp/MC5000_DevKit/
+
+     Shenzhen I/O https://www.zachtronics.com/shenzhen-io/
+
+AUTHORS
+     The MC5000 Dev Kit was created by GitHub user rickp.  The mc5000 utility
+     was written by Sven M. Hallberg <pesco@khjk.org> as an alternative to the
+     original programming software.
+
+			       January 18, 2023
